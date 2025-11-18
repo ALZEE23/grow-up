@@ -64,7 +64,7 @@ local attackAbort = false
 
 local attackSession = 0
 local followSession = 0
-local currentTargetBuilding = nil
+local _currentTargetBuilding = nil
 
 -- Utilities
 local function getClosestPlayer()
@@ -136,7 +136,7 @@ local function returnToPlayerSmoothNonBlocking(player, sessionId)
 	returningToPlayer = true
 
 	local hrp = player.Character:FindFirstChild("HumanoidRootPart") or player.Character.PrimaryPart
-	if not hrp then returningToPlayer = false return end
+	if not hrp then returningToPlayer = false; return end
 
 	primaryPart = ensurePrimaryPart(pet)
 	local petPos = primaryPart and primaryPart.Position or Vector3.new(0,0,0)
@@ -192,7 +192,7 @@ local function attackBuildingSequence(building, sessionId)
 	end
 
 	local bp = building.PrimaryPart or building:FindFirstChildWhichIsA("BasePart")
-	if not bp then isAttackingBuilding = false return end
+	if not bp then isAttackingBuilding = false; return end
 
 	local targetPos = bp.Position
 	primaryPart = ensurePrimaryPart(pet)
