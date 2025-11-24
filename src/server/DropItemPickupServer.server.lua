@@ -5,34 +5,6 @@ local Players = game:GetService("Players")
 local InventoryManager = require(game.ServerScriptService.Server.InventoryManager)
 local DropItemsFolder = ReplicatedStorage:WaitForChild("DropItems")
 
--- PERBAIKAN: Track players yang sudah di-init
-local initializedPlayers = {}
-
-Players.PlayerAdded:Connect(function(player)
-    if not initializedPlayers[player.UserId] then
-        InventoryManager.InitPlayer(player)
-        initializedPlayers[player.UserId] = true
-        print("[DropItemPickup] Initialized player:", player.Name)
-    end
-    
-    -- PERBAIKAN: Handle respawn - kirim ulang inventory saat character spawn
-    player.CharacterAdded:Connect(function(character)
-        -- Wait a bit for character to fully load
-        task.wait(1)
-        
-        -- Send current inventory to client
-        local UpdateInventoryEvent = ReplicatedStorage:WaitForChild("UpdateInventory")
-        local inventory = InventoryManager.GetInventory(player)
-        UpdateInventoryEvent:FireClient(player, inventory)
-        print("[DropItemPickup] Sent inventory to", player.Name, "after respawn. Items:", #inventory)
-    end)
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-    InventoryManager.RemovePlayer(player)
-    initializedPlayers[player.UserId] = nil
-end)
-
 -- PERBAIKAN: Function to check if item is valid pickup
 local function isValidPickupItem(part)
     -- Skip if part is nil
@@ -40,6 +12,11 @@ local function isValidPickupItem(part)
     
     -- Skip terrain
     if part:IsA("Terrain") then return false end
+    
+    -- PERBAIKAN: Skip if item has pickup delay
+    if part:FindFirstChild("PickupDelay") then
+        return false -- Item not ready for pickup yet
+    end
     
     -- Skip if part belongs to a player character
     local character = part.Parent
@@ -62,13 +39,13 @@ local function isValidPickupItem(part)
         rootParent = rootParent.Parent
     end
     
-    -- PERBAIKAN: Only allow items that exist in DropItems folder
+    -- Only allow items that exist in DropItems folder
     local itemExists = DropItemsFolder:FindFirstChild(part.Name)
     if not itemExists then
         return false -- Item not in DropItems catalog
     end
     
-    -- PERBAIKAN: Skip if part has "Character" in its ancestry (extra safety)
+    -- Skip if part has "Character" in its ancestry (extra safety)
     local fullName = part:GetFullName()
     if string.find(string.lower(fullName), "character") then
         return false
@@ -89,12 +66,24 @@ local function setupPickup(part)
                 -- Double check the part is still valid (not a player body part)
                 if not isValidPickupItem(part) then return end
                 
+                print("[DropItemPickup] ==========PICKUP START==========")
+                print("[DropItemPickup] Player", player.Name, "touched item:", part.Name)
+                
                 -- Kirim event ke client untuk pickup
                 PickupDropItem:FireClient(player, part.Name)
+                print("[DropItemPickup] Sent pickup event to client")
+                
                 InventoryManager.AddItem(player, part.Name)
+                print("[DropItemPickup] Added to inventory")
+                
+                -- Check current inventory
+                local currentInv = InventoryManager.GetInventory(player)
+                print("[DropItemPickup] Current inventory after pickup:", currentInv)
+                
                 -- Hapus item dari Workspace
                 part:Destroy()
                 print("[DropItemPickup] Player", player.Name, "picked up", part.Name)
+                print("[DropItemPickup] ==========PICKUP END==========")
             end
         end
     end)
