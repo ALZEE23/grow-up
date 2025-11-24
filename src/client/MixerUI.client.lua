@@ -46,9 +46,12 @@ local function checkRecipeResult()
         end
     end
     
-    if #materialsToMix < 2 then -- Need at least 2 materials
+    -- PERBAIKAN: Hapus minimum requirement, biarkan 1 item juga bisa dicek
+    if #materialsToMix < 1 then 
         return
     end
+    
+    print("[MixerUI] Current materials to check:", materialsToMix)
     
     -- Try to find matching recipe
     local ListItemCombineFolder = ReplicatedStorage:WaitForChild("ListItemCombine")
@@ -63,24 +66,39 @@ local function checkRecipeResult()
             end
         end
         
-        -- Check if materials match
+        print("[MixerUI] Checking recipe:", recipeName, "requires:", requiredItems, "count:", #requiredItems)
+        print("[MixerUI] Current materials:", materialsToMix, "count:", #materialsToMix)
+        
+        -- PERBAIKAN: Exact match untuk jumlah dan item
         if #requiredItems == #materialsToMix then
+            -- Create copies untuk manipulation
+            local tempRequired = {}
+            for _, item in ipairs(requiredItems) do
+                table.insert(tempRequired, item)
+            end
+            
+            local tempMaterials = {}
+            for _, item in ipairs(materialsToMix) do
+                table.insert(tempMaterials, item)
+            end
+            
+            -- Check if all materials match (handle duplicates)
             local allMatch = true
-            for _, required in ipairs(requiredItems) do
-                local found = false
-                for _, material in ipairs(materialsToMix) do
-                    if material == required then
-                        found = true
-                        break
-                    end
-                end
-                if not found then
+            for _, material in ipairs(tempMaterials) do
+                local foundIndex = table.find(tempRequired, material)
+                if foundIndex then
+                    table.remove(tempRequired, foundIndex) -- Remove to handle duplicates
+                    print("[MixerUI] Found matching material:", material)
+                else
                     allMatch = false
+                    print("[MixerUI] Material not found in recipe:", material)
                     break
                 end
             end
             
-            if allMatch then
+            if allMatch and #tempRequired == 0 then -- Ensure all required items are matched
+                print("[MixerUI] RECIPE MATCH FOUND:", recipeName)
+                
                 -- Show result preview
                 local outputFolder = combineInfo:WaitForChild("MeshPartOutput")
                 local outputMeshPart = outputFolder:GetChildren()[1]
@@ -97,9 +115,9 @@ local function checkRecipeResult()
                         model = model:Clone()
                         model.Parent = viewport
                         
-                        -- Setup camera
+                        -- PERBAIKAN: Setup camera lebih dekat (2x zoom) untuk result
                         local cam = Instance.new("Camera")
-                        cam.CFrame = CFrame.new(Vector3.new(0, 0, 6), Vector3.new(0, 0, 0))
+                        cam.CFrame = CFrame.new(Vector3.new(0, 0, 3), Vector3.new(0, 0, 0)) -- Dari 6 jadi 3
                         cam.Parent = viewport
                         viewport.CurrentCamera = cam
                         
@@ -108,10 +126,16 @@ local function checkRecipeResult()
                         viewport.LightDirection = Vector3.new(0, -1, -1)
                         
                         print("[MixerUI] Showing result preview:", outputMeshPart.Name)
+                    else
+                        warn("[MixerUI] Output model not found in DropItems:", outputMeshPart.Name)
                     end
                 end
                 return
+            else
+                print("[MixerUI] Recipe failed - allMatch:", allMatch, "remaining required:", tempRequired)
             end
+        else
+            print("[MixerUI] Recipe failed - wrong count. Required:", #requiredItems, "Have:", #materialsToMix)
         end
     end
     
@@ -137,9 +161,9 @@ local function addToMaterialSlot(itemName)
                 model = model:Clone()
                 model.Parent = viewport
                 
-                -- Setup camera
+                -- PERBAIKAN: Setup camera lebih dekat (2x zoom)
                 local cam = Instance.new("Camera")
-                cam.CFrame = CFrame.new(Vector3.new(0, 0, 6), Vector3.new(0, 0, 0))
+                cam.CFrame = CFrame.new(Vector3.new(0, 0, 3), Vector3.new(0, 0, 0)) -- Dari 6 jadi 3
                 cam.Parent = viewport
                 viewport.CurrentCamera = cam
                 
@@ -325,6 +349,23 @@ UpdateInventoryEvent.OnClientEvent:Connect(function(newInventoryData)
         -- Click event to add to material slot
         slot.MouseButton1Click:Connect(function()
             print("[MixerUI] Item clicked:", itemName)
+            
+            -- PERBAIKAN: Check if we have enough of this item
+            local currentCount = 0
+            for _, slotItem in ipairs(materialItems) do
+                if slotItem == itemName then
+                    currentCount = currentCount + 1
+                end
+            end
+            
+            -- Check available count in inventory
+            local availableCount = count -- This is from the itemCounts
+            
+            if currentCount >= availableCount then
+                print("[MixerUI] Cannot add more", itemName, "- only have", availableCount, "but trying to use", currentCount + 1)
+                return
+            end
+            
             if addToMaterialSlot(itemName) then
                 print("[MixerUI] Successfully added", itemName, "to material slots")
             else

@@ -6,6 +6,9 @@ local DropItemsFolder = ReplicatedStorage:WaitForChild("DropItems")
 
 local UpdateInventoryEvent = ReplicatedStorage:WaitForChild("UpdateInventory") -- RemoteEvent dari server
 
+-- Track connections untuk hotbar slots
+local hotbarConnections = {}
+
 UpdateInventoryEvent.OnClientEvent:Connect(function(inventoryData)
     print("[Client] Updating UI Inventory...")
 
@@ -24,6 +27,14 @@ UpdateInventoryEvent.OnClientEvent:Connect(function(inventoryData)
     local uniqueItems = {}
     for name, count in pairs(itemCounts) do
         table.insert(uniqueItems, { name = name, count = count })
+    end
+    
+    -- PERBAIKAN: Disconnect semua event lama di hotbar
+    for i = 1, 10 do
+        if hotbarConnections[i] then
+            hotbarConnections[i]:Disconnect()
+            hotbarConnections[i] = nil
+        end
     end
     
     -- Clear hotbar slots first
@@ -89,11 +100,11 @@ UpdateInventoryEvent.OnClientEvent:Connect(function(inventoryData)
             
             local EquipItemEvent = ReplicatedStorage:WaitForChild("EquipItem")
 
-            -- 🖱️ Tambahkan event klik (optional)
-            slot.MouseButton1Click:Connect(function()
-                print("Kamu klik item:", itemInfo.name)
-                EquipItemEvent:FireServer(itemInfo.name)
-                -- Bisa tambahkan logic pakai item di sini
+            -- PERBAIKAN: Buat event click baru dengan data terbaru
+            local currentItemName = itemInfo.name -- Capture current item name
+            hotbarConnections[i] = slot.MouseButton1Click:Connect(function()
+                print("Hotbar slot", i, "clicked - equipping:", currentItemName)
+                EquipItemEvent:FireServer(currentItemName)
             end)
         end
     end
@@ -151,11 +162,11 @@ UpdateInventoryEvent.OnClientEvent:Connect(function(inventoryData)
         
         local EquipItemEvent = ReplicatedStorage:WaitForChild("EquipItem")
         
-        -- 🖱️ Tambahkan event klik (optional)
+        -- 🖱️ Event click untuk inventory (ini sudah benar karena slot baru)
+        local currentItemName = name -- Capture current item name
         slot.MouseButton1Click:Connect(function()
-            print("Kamu klik item:", name)
-            EquipItemEvent:FireServer(name)
-            -- Bisa tambahkan logic pakai item di sini
+            print("Inventory item clicked:", currentItemName)
+            EquipItemEvent:FireServer(currentItemName)
         end)
     end
 end)
