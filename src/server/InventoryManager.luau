@@ -3,8 +3,20 @@ local inventoryStore = DataStoreService:GetDataStore("PlayerInventory")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UpdateInventoryEvent = ReplicatedStorage:WaitForChild("UpdateInventory") -- RemoteEvent
 
+-- Add this new RemoteEvent
+local GetInventoryEvent = Instance.new("RemoteEvent")
+GetInventoryEvent.Name = "GetInventory"
+GetInventoryEvent.Parent = ReplicatedStorage
+
 local inventories = {}
 local InventoryManager = {}
+
+-- Handle request for current inventory
+GetInventoryEvent.OnServerEvent:Connect(function(player)
+    local inventory = inventories[player.UserId] or {}
+    UpdateInventoryEvent:FireClient(player, inventory)
+    print("[InventoryManager] Sent current inventory to", player.Name, "Count:", #inventory)
+end)
 
 -- 🧩 Load data player saat masuk
 function InventoryManager.InitPlayer(player)
@@ -15,6 +27,9 @@ function InventoryManager.InitPlayer(player)
 	if success and savedData then
 		inventories[player.UserId] = savedData
 		UpdateInventoryEvent:FireClient(player, inventories[player.UserId])
+		-- Add this delay to ensure mixer UI is loaded
+		task.wait(2)
+		InventoryManager.SendInventoryToMixer(player)
 		print("[InventoryManager] Loaded inventory for", player.Name, table.concat(savedData, ", "))
 	else
 		inventories[player.UserId] = {}
@@ -60,6 +75,13 @@ end
 function InventoryManager.RemovePlayer(player)
 	InventoryManager.SavePlayerData(player)
 	inventories[player.UserId] = nil
+end
+
+-- Send inventory to mixer
+function InventoryManager.SendInventoryToMixer(player)
+    local inventory = inventories[player.UserId] or {}
+    UpdateInventoryEvent:FireClient(player, inventory)
+    print("[InventoryManager] Sent inventory to mixer for", player.Name)
 end
 
 return InventoryManager

@@ -77,6 +77,10 @@ MixerUpdateEvent.OnServerEvent:Connect(function(player, itemName)
     local outputItemName = combineInfo.MeshPartOutput.Name
     table.insert(inventory, outputItemName)
     
+    -- PERBAIKAN: Update inventory immediately di client
+    local UpdateInventoryEvent = ReplicatedStorage:WaitForChild("UpdateInventory")
+    UpdateInventoryEvent:FireClient(player, inventory)
+    
     InventoryManager.SavePlayerData(player)
     print("[MixerManager] Successfully combined items for", player.Name, "to create", outputItemName)
 end)
