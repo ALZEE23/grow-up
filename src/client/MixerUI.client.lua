@@ -5,6 +5,7 @@ local DropItemsFolder = ReplicatedStorage:WaitForChild("DropItems")
 local UpdateInventoryEvent = ReplicatedStorage:WaitForChild("UpdateInventory")
 local MixerUpdateEvent = ReplicatedStorage:WaitForChild("MixerUpdate")
 local ItemSlotTemplate = ReplicatedStorage.UI:WaitForChild("SlotTemplate")
+local ListItemCombineFolder = ReplicatedStorage:WaitForChild("ListItemCombine")
 
 -- PERBAIKAN: Variables untuk track state dan connections
 local materialItems = {nil, nil, nil}
@@ -94,14 +95,28 @@ local function setupMixerFunctionality()
         end
         
         if #materialsToMix < 1 then 
+            -- No materials, disable mix button and make it gray/transparan
+            if freshElements.mixButton then
+                freshElements.mixButton.Interactable = false
+                freshElements.mixButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)  -- Gray
+                freshElements.mixButton.BackgroundTransparency = 0.5  -- Transparan
+            end
             return
         end
         
         print("[MixerUI] Current materials to check:", materialsToMix)
         
+        -- Default: disable mix button and make it gray/transparan
+        if freshElements.mixButton then
+            freshElements.mixButton.Interactable = false
+            freshElements.mixButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)  -- Gray
+            freshElements.mixButton.BackgroundTransparency = 0.5  -- Transparan
+        end
+        
         -- Try to find matching recipe
-        local ListItemCombineFolder = ReplicatedStorage:WaitForChild("ListItemCombine")
-        for _, combineInfo in ipairs(ListItemCombineFolder:GetChildren()) do
+        local ListItemFoodCombineFolder = ListItemCombineFolder:WaitForChild("Food")
+
+        for _, combineInfo in ipairs(ListItemFoodCombineFolder:GetChildren()) do
             local recipeName = combineInfo.Name
             
             -- Check if current materials match this recipe
@@ -137,6 +152,33 @@ local function setupMixerFunctionality()
                 if allMatch and #tempRequired == 0 then
                     print("[MixerUI] RECIPE MATCH FOUND:", recipeName)
                     
+                    -- Check if player has enough items in inventory
+                    local invCounts = {}
+                    for _, item in ipairs(inventoryData) do
+                        invCounts[item] = (invCounts[item] or 0) + 1
+                    end
+                    
+                    local hasEnough = true
+                    for _, reqItem in ipairs(requiredItems) do
+                        if (invCounts[reqItem] or 0) < 1 then
+                            hasEnough = false
+                            break
+                        end
+                    end
+                    
+                    -- Enable mix button and make it normal if has enough items
+                    if freshElements.mixButton then
+                        freshElements.mixButton.Interactable = hasEnough
+                        if hasEnough then
+                            freshElements.mixButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)  -- Normal
+                            freshElements.mixButton.BackgroundTransparency = 0  -- Normal opacity
+                        else
+                            freshElements.mixButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)  -- Gray
+                            freshElements.mixButton.BackgroundTransparency = 0.5  -- Transparan
+                        end
+                        print("[MixerUI] Mix button interactable:", hasEnough)
+                    end
+                    
                     local outputFolder = combineInfo:WaitForChild("MeshPartOutput")
                     local outputMeshPart = outputFolder:GetChildren()[1]
                     
@@ -146,17 +188,20 @@ local function setupMixerFunctionality()
                         viewport.BackgroundTransparency = 1
                         viewport.Parent = currentResult
                         
-                        local model = DropItemsFolder:FindFirstChild(outputMeshPart.Name)
-                        if model then
-                            model = model:Clone()
-                            model.Parent = viewport
+                        local model = DropItemsFolder:FindFirstChild("FoodItems")
+                        
+                        local modelItem = model:FindFirstChild(outputMeshPart.Name)
+                        
+                        if modelItem then
+                            modelItem = model:Clone()
+                            modelItem.Parent = viewport
                             
                             local cam = Instance.new("Camera")
                             cam.CFrame = CFrame.new(Vector3.new(0, 0, 3), Vector3.new(0, 0, 0))
                             cam.Parent = viewport
                             viewport.CurrentCamera = cam
                             
-                            model:PivotTo(CFrame.new(0, 0, 0))
+                            modelItem:PivotTo(CFrame.new(0, 0, 0))
                             viewport.Ambient = Color3.new(1, 1, 1)
                             viewport.LightDirection = Vector3.new(0, -1, -1)
                             
@@ -296,8 +341,8 @@ local function setupMixerFunctionality()
                 end
                 
                 -- Find matching recipe
-                local ListItemCombineFolder = ReplicatedStorage:WaitForChild("ListItemCombine")
-                for _, combineInfo in ipairs(ListItemCombineFolder:GetChildren()) do
+                local ListItemFoodCombineFolder = ListItemCombineFolder:WaitForChild("Food")  -- UBAH: Gunakan Food folder
+                for _, combineInfo in ipairs(ListItemFoodCombineFolder:GetChildren()) do  -- UBAH: Loop melalui Food children
                     local recipeName = combineInfo.Name
                     
                     local requiredItems = {}
@@ -324,6 +369,25 @@ local function setupMixerFunctionality()
                         end
                         
                         if allMatch then
+                            -- TAMBAHAN: Check if player has enough items in inventory
+                            local invCounts = {}
+                            for _, item in ipairs(inventoryData) do
+                                invCounts[item] = (invCounts[item] or 0) + 1
+                            end
+                            
+                            local hasEnough = true
+                            for _, reqItem in ipairs(requiredItems) do
+                                if (invCounts[reqItem] or 0) < 1 then
+                                    hasEnough = false
+                                    break
+                                end
+                            end
+                            
+                            if not hasEnough then
+                                print("[MixerUI] Not enough items in inventory for recipe:", recipeName)
+                                return
+                            end
+                            
                             print("[MixerUI] Found matching recipe:", recipeName)
                             MixerUpdateEvent:FireServer(recipeName)
                             
@@ -340,10 +404,13 @@ local function setupMixerFunctionality()
         end
     end
 
-    -- Function to update inventory
-    local function updateMixerInventory(newInventoryData)
-        print("[MixerUI] ========== MIXER UPDATE START ==========")
+    -- Function to update mixer list with recipes from ListItemCombine
+    local function updateMixerListRecipe(newInventoryData)
+        print("[MixerUI] ========== MIXER UPDATE START (recipes) ==========")
         print("[MixerUI] Received inventory data:", newInventoryData)
+        
+        -- Store inventory data for availability check
+        inventoryData = newInventoryData or {}
         
         -- Get fresh scrolling frame
         local freshElements = getFreshMixerElements()
@@ -352,16 +419,15 @@ local function setupMixerFunctionality()
             return
         end
         local currentScrollingFrame = freshElements.scrollingFrame
-        
-        inventoryData = newInventoryData
-        
-        -- Group items by count
-        local itemCounts = {}
-        for _, itemName in ipairs(inventoryData) do
-            itemCounts[itemName] = (itemCounts[itemName] or 0) + 1
+
+        -- PERBAIKAN: Sembunyikan atau hapus SlotTemplate asli agar tidak ditampilkan
+        for _, child in ipairs(currentScrollingFrame:GetChildren()) do
+            if child.Name == "SlotTemplate" then
+                child.Visible = false  -- Atau child:Destroy() jika ingin hapus permanen
+            end
         end
-        
-        -- Clear existing slots
+
+        -- Clear existing slots (hanya clone)
         local clearedCount = 0
         for _, child in ipairs(currentScrollingFrame:GetChildren()) do
             if child:IsA("TextButton") and child.Name:find("_Slot") then
@@ -371,16 +437,57 @@ local function setupMixerFunctionality()
         end
         print("[MixerUI] Cleared", clearedCount, "existing slots")
         
-        -- Create new slots
+        -- Get recipes from ListItemCombine/Food
+        local ListItemFoodCombineFolder = ListItemCombineFolder:FindFirstChild("Food")
+        if not ListItemFoodCombineFolder then
+            warn("[MixerUI] Food folder not found in ListItemCombine")
+            return
+        end
+        
+        -- Create slots for each recipe (TAMPILKAN SEMUA, TANPA CHECK hasAllItems)
         local createdCount = 0
-        for itemName, count in pairs(itemCounts) do
+        for _, combineInfo in ipairs(ListItemFoodCombineFolder:GetChildren()) do
+            local recipeName = combineInfo.Name
+            
+            -- Get required ingredients
+            local requiredItems = {}
+            for _, child in ipairs(combineInfo:GetChildren()) do
+                if child.Name ~= "MeshPartOutput" then
+                    table.insert(requiredItems, child.Name)
+                end
+            end
+            
+            -- TAMBAHAN: Check if player has all required items for visual feedback (optional, bisa dihapus jika tidak mau)
+            local invCounts = {}
+            for _, item in ipairs(inventoryData) do
+                invCounts[item] = (invCounts[item] or 0) + 1
+            end
+            
+            local hasAllItems = true
+            for _, reqItem in ipairs(requiredItems) do
+                if (invCounts[reqItem] or 0) < 1 then
+                    hasAllItems = false
+                    break
+                end
+            end
+            
+            -- Always create slot, but change color and transparency if not available
             local slot = ItemSlotTemplate:Clone()
-            slot.Name = itemName .. "_Slot"
+            slot.Name = recipeName .. "_Slot"
             slot.Parent = currentScrollingFrame
             slot.Visible = true
             createdCount = createdCount + 1
             
-            local viewport = slot:WaitForChild("ViewportFrame")
+            -- Change color and transparency if not available
+            if not hasAllItems then
+                slot.BackgroundColor3 = Color3.fromRGB(100, 100, 100)  -- Lebih gray
+                slot.BackgroundTransparency = 0.5  -- Lebih transparan (opacity kurang)
+            else
+                slot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)  -- White if available
+                slot.BackgroundTransparency = 0  -- Normal opacity
+            end
+            
+            local viewport = slot:FindFirstChild("ViewportFrame")
             
             -- Clear viewport
             for _, obj in ipairs(viewport:GetChildren()) do
@@ -389,68 +496,73 @@ local function setupMixerFunctionality()
                 end
             end
             
-            -- Add model
-            local model = DropItemsFolder:FindFirstChild(itemName)
-            if model then
-                model = model:Clone()
-                model.Parent = viewport
-                
-                local cam = Instance.new("Camera")
-                cam.CFrame = CFrame.new(Vector3.new(0, 0, 6), Vector3.new(0, 0, 0))
-                cam.Parent = viewport
-                viewport.CurrentCamera = cam
-                
-                model:PivotTo(CFrame.new(0, 0, 0))
-                viewport.BackgroundTransparency = 1
-                viewport.Ambient = Color3.new(1, 1, 1)
-                viewport.LightDirection = Vector3.new(0, -1, -1)
+            -- Add model from DropItems/FoodItems based on MeshPartOutput
+            local outputFolder = combineInfo:FindFirstChild("MeshPartOutput")
+            if outputFolder then
+                local outputMeshPart = outputFolder:GetChildren()[1]
+                if outputMeshPart then
+                    local foodItemsFolder = DropItemsFolder:FindFirstChild("FoodItems")
+                    if foodItemsFolder then
+                        local model = foodItemsFolder:FindFirstChild(outputMeshPart.Name)
+                        if model then
+                            model = model:Clone()
+                            model.Parent = viewport
+                            
+                            local cam = Instance.new("Camera")
+                            cam.CFrame = CFrame.new(Vector3.new(0, 0, 6), Vector3.new(0, 0, 0))
+                            cam.Parent = viewport
+                            viewport.CurrentCamera = cam
+                            
+                            model:PivotTo(CFrame.new(0, 0, 0))
+                            viewport.BackgroundTransparency = 1
+                            viewport.Ambient = Color3.new(1, 1, 1)
+                            viewport.LightDirection = Vector3.new(0, -1, -1)
+                        else
+                            warn("[MixerUI] Model not found for recipe:", recipeName, "output:", outputMeshPart.Name)
+                        end
+                    end
+                end
             end
             
             -- Update labels
             local itemCount = slot:FindFirstChild("ItemCount")
             if itemCount then
-                itemCount.Text = count .. "x"
+                itemCount.Text = "1x"  -- Recipes are single items
             end
             
             local nameLabel = slot:FindFirstChild("ItemName")
             if nameLabel then
-                nameLabel.Text = itemName
+                nameLabel.Text = recipeName
             end
             
-            -- Click event
+            -- Click event to auto-fill materials
             slot.MouseButton1Click:Connect(function()
-                print("[MixerUI] Item clicked:", itemName)
+                print("[MixerUI] Recipe clicked:", recipeName)
                 
-                local currentCount = 0
-                for _, slotItem in ipairs(materialItems) do
-                    if slotItem == itemName then
-                        currentCount = currentCount + 1
-                    end
+                -- Clear current material slots
+                for i = 1, 3 do
+                    removeFromMaterialSlot(i)
                 end
                 
-                if currentCount >= count then
-                    print("[MixerUI] Cannot add more", itemName)
-                    return
+                -- Add required items to material slots
+                for _, reqItem in ipairs(requiredItems) do
+                    addToMaterialSlot(reqItem)
                 end
                 
-                if addToMaterialSlot(itemName) then
-                    print("[MixerUI] Successfully added", itemName)
-                else
-                    print("[MixerUI] Failed to add", itemName)
-                end
+                print("[MixerUI] Auto-filled materials for recipe:", recipeName)
             end)
         end
         
-        print("[MixerUI] Created", createdCount, "new slots")
+        print("[MixerUI] Created", createdCount, "recipe slots")
         print("[MixerUI] ========== MIXER UPDATE END ==========")
     end
-    
+
     -- Setup connections
     setupConnections()
     
     -- Store update function globally
-    _G.updateMixerInventory = updateMixerInventory
-    
+    _G.updateMixerListRecipe = updateMixerListRecipe
+
     return true
 end
 
@@ -512,8 +624,8 @@ end)
 
 -- Update inventory
 UpdateInventoryEvent.OnClientEvent:Connect(function(newInventoryData)
-    if mixerInitialized and _G.updateMixerInventory then
-        _G.updateMixerInventory(newInventoryData)
+    if mixerInitialized and _G.updateMixerListRecipe then  -- UBAH INI: dari updateMixerInventory ke updateMixerListRecipe
+        _G.updateMixerListRecipe(newInventoryData)
     else
         print("[MixerUI] Mixer not ready, caching inventory data")
         inventoryData = newInventoryData
