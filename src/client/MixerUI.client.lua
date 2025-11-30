@@ -12,6 +12,10 @@ local materialItems = {nil, nil, nil}
 local inventoryData = {}
 local currentConnections = {}
 local mixerInitialized = false
+local isBoosterMode = false
+local isFoodMode = true
+
+local updateMixerListRecipe -- forward declaration
 
 -- PERBAIKAN: Function to safely disconnect all connections
 local function disconnectAll()
@@ -35,6 +39,11 @@ local function getFreshMixerElements()
     return {
         mixerGui = mixerGui,
         mixerScreen = mixerScreen,
+        foodButton = mixerScreen:FindFirstChild("FoodButton"),
+        boosterButton = mixerScreen:FindFirstChild("BoosterButton"),
+        labelName = mixerScreen:FindFirstChild("LabelName"),
+        labelRarity = mixerScreen:FindFirstChild("LabelRarity"),
+        labelElement = mixerScreen:FindFirstChild("LabelElement"),
         closeButton = mixerScreen:FindFirstChild("BackButton"),
         result = mixerScreen:FindFirstChild("Result"),
         scrollingFrame = mixerScreen:FindFirstChild("ScrollingFrame"),
@@ -62,11 +71,16 @@ local function setupMixerFunctionality()
         warn("[MixerUI] Failed to get mixer elements")
         return false
     end
+
     
-    local mixerScreen = elements.mixerScreen
+    
+    -- local mixerScreen = elements.mixerScreen
     local closeButton = elements.closeButton
-    local result = elements.result
-    local scrollingFrame = elements.scrollingFrame
+    local foodButton = elements.foodButton
+    local boosterButton = elements.boosterButton
+    local slotCreatedCount = 0
+    -- local result = elements.result
+    -- local scrollingFrame = elements.scrollingFrame
     local mixButton = elements.mixButton
     local materialSlots = elements.materialSlots
 
@@ -114,9 +128,17 @@ local function setupMixerFunctionality()
         end
         
         -- Try to find matching recipe
-        local ListItemFoodCombineFolder = ListItemCombineFolder:WaitForChild("Food")
+        local ListItemCombineTargetFolder
+        if isFoodMode then
+            ListItemCombineTargetFolder = ListItemCombineFolder:WaitForChild("Food")
+        elseif isBoosterMode then
+            ListItemCombineTargetFolder = ListItemCombineFolder:WaitForChild("Booster")
+        else
+            warn("[MixerUI] Tidak ada mode aktif!")
+            return
+        end
 
-        for _, combineInfo in ipairs(ListItemFoodCombineFolder:GetChildren()) do
+        for _, combineInfo in ipairs(ListItemCombineTargetFolder:GetChildren()) do
             local recipeName = combineInfo.Name
             
             -- Check if current materials match this recipe
@@ -188,24 +210,50 @@ local function setupMixerFunctionality()
                         viewport.BackgroundTransparency = 1
                         viewport.Parent = currentResult
                         
-                        local model = DropItemsFolder:FindFirstChild("FoodItems")
+                        local foodItemsFolder = DropItemsFolder:FindFirstChild("FoodItems")
                         
-                        local modelItem = model:FindFirstChild(outputMeshPart.Name)
-                        
-                        if modelItem then
-                            modelItem = model:Clone()
-                            modelItem.Parent = viewport
+                        if foodItemsFolder then
+                            local model = foodItemsFolder:FindFirstChild(outputMeshPart.Name)
                             
-                            local cam = Instance.new("Camera")
-                            cam.CFrame = CFrame.new(Vector3.new(0, 0, 3), Vector3.new(0, 0, 0))
-                            cam.Parent = viewport
-                            viewport.CurrentCamera = cam
+                            if model then
+                                model = model:Clone()
+                                model.Parent = viewport
                             
-                            modelItem:PivotTo(CFrame.new(0, 0, 0))
-                            viewport.Ambient = Color3.new(1, 1, 1)
-                            viewport.LightDirection = Vector3.new(0, -1, -1)
+                                -- Ambil MeshPart di dalam model
+                                local rarity = "Unknown"
+                                local element = "Neutral"
+
+                                if model then
+                                    rarity = model:GetAttribute("rarity") or "Unknown"
+                                    element = model:GetAttribute("element") or "Neutral"
+                                end
                             
-                            print("[MixerUI] Showing result preview:", outputMeshPart.Name)
+                                -- Update label
+                                if freshElements.labelName then
+                                    freshElements.labelName.Text = model.Name
+                                end
+                                if freshElements.labelRarity then
+                                    freshElements.labelRarity.Text = "Rarity: " .. rarity
+                                end
+                                if freshElements.labelElement then
+                                    freshElements.labelElement.Text = "Element: " .. element
+                                end
+                                
+                                local cam = Instance.new("Camera")
+                                cam.CFrame = CFrame.new(Vector3.new(0, 0, 3), Vector3.new(0, 0, 0))
+                                cam.Parent = viewport
+                                viewport.CurrentCamera = cam
+
+                                model:PivotTo(CFrame.new(0, 0, 0))
+                                viewport.Ambient = Color3.new(1, 1, 1)
+                                viewport.LightDirection = Vector3.new(0, -1, -1)
+                                
+                                print("[MixerUI] Showing result preview:", outputMeshPart.Name, "- Rarity:", rarity, "- Element:", element)
+                            else
+                                warn("[MixerUI] Model not found in FoodItems:", outputMeshPart.Name)
+                            end
+                        else
+                            warn("[MixerUI] FoodItems folder not found")
                         end
                     end
                     return
@@ -295,6 +343,24 @@ local function setupMixerFunctionality()
                 for i = 1, 3 do
                     removeFromMaterialSlot(i)
                 end
+            end)
+        end
+
+        if foodButton then
+            currentConnections["foodButton"] = foodButton.MouseButton1Click:Connect(function()
+                isFoodMode = true
+                isBoosterMode = false
+                updateMixerListRecipe(inventoryData) -- <-- WAJIB DIPANGGIL!
+                print("[MixerUI] Food button clicked")
+            end)
+        end
+
+        if boosterButton then
+            currentConnections["boosterButton"] = boosterButton.MouseButton1Click:Connect(function()
+                isBoosterMode = true
+                isFoodMode = false
+                updateMixerListRecipe(inventoryData) -- <-- WAJIB DIPANGGIL!
+                print("[MixerUI] Booster button clicked")
             end)
         end
         
@@ -405,7 +471,7 @@ local function setupMixerFunctionality()
     end
 
     -- Function to update mixer list with recipes from ListItemCombine
-    local function updateMixerListRecipe(newInventoryData)
+    updateMixerListRecipe = function(newInventoryData)
         print("[MixerUI] ========== MIXER UPDATE START (recipes) ==========")
         print("[MixerUI] Received inventory data:", newInventoryData)
         
@@ -438,15 +504,18 @@ local function setupMixerFunctionality()
         print("[MixerUI] Cleared", clearedCount, "existing slots")
         
         -- Get recipes from ListItemCombine/Food
-        local ListItemFoodCombineFolder = ListItemCombineFolder:FindFirstChild("Food")
-        if not ListItemFoodCombineFolder then
-            warn("[MixerUI] Food folder not found in ListItemCombine")
+        local ListItemCombineTargetFolder
+        if isFoodMode then
+            ListItemCombineTargetFolder = ListItemCombineFolder:FindFirstChild("Food")
+        elseif isBoosterMode then
+            ListItemCombineTargetFolder = ListItemCombineFolder:FindFirstChild("Booster")
+        else
+            warn("[MixerUI] No active mode for recipe listing!")
             return
         end
-        
-        -- Create slots for each recipe (TAMPILKAN SEMUA, TANPA CHECK hasAllItems)
-        local createdCount = 0
-        for _, combineInfo in ipairs(ListItemFoodCombineFolder:GetChildren()) do
+
+        -- Gunakan ListItemCombineTargetFolder untuk loop resep
+        for _, combineInfo in ipairs(ListItemCombineTargetFolder:GetChildren()) do
             local recipeName = combineInfo.Name
             
             -- Get required ingredients
@@ -470,14 +539,15 @@ local function setupMixerFunctionality()
                     break
                 end
             end
+
             
             -- Always create slot, but change color and transparency if not available
             local slot = ItemSlotTemplate:Clone()
             slot.Name = recipeName .. "_Slot"
             slot.Parent = currentScrollingFrame
             slot.Visible = true
-            createdCount = createdCount + 1
-            
+            slotCreatedCount = slotCreatedCount + 1
+
             -- Change color and transparency if not available
             if not hasAllItems then
                 slot.BackgroundColor3 = Color3.fromRGB(100, 100, 100)  -- Lebih gray
@@ -553,7 +623,7 @@ local function setupMixerFunctionality()
             end)
         end
         
-        print("[MixerUI] Created", createdCount, "recipe slots")
+        print("[MixerUI] Created", slotCreatedCount, "recipe slots")
         print("[MixerUI] ========== MIXER UPDATE END ==========")
     end
 
