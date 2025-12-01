@@ -150,39 +150,41 @@ local function setupMixerFunctionality()
             end
             
             if #requiredItems == #materialsToMix then
-                local tempRequired = {}
-                for _, item in ipairs(requiredItems) do
-                    table.insert(tempRequired, item)
+                local reqCounts = {}
+                for _, reqItem in ipairs(requiredItems) do
+                    reqCounts[reqItem] = (reqCounts[reqItem] or 0) + 1
                 end
-                
-                local tempMaterials = {}
-                for _, item in ipairs(materialsToMix) do
-                    table.insert(tempMaterials, item)
+                local matCounts = {}
+                for _, mat in ipairs(materialsToMix) do
+                    matCounts[mat] = (matCounts[mat] or 0) + 1
                 end
-                
                 local allMatch = true
-                for _, material in ipairs(tempMaterials) do
-                    local foundIndex = table.find(tempRequired, material)
-                    if foundIndex then
-                        table.remove(tempRequired, foundIndex)
-                    else
+                for reqItem, needed in pairs(reqCounts) do
+                    if (matCounts[reqItem] or 0) < needed then
                         allMatch = false
                         break
                     end
                 end
-                
-                if allMatch and #tempRequired == 0 then
+                if allMatch then
                     print("[MixerUI] RECIPE MATCH FOUND:", recipeName)
                     
                     -- Check if player has enough items in inventory
+                    -- Hitung kebutuhan resep
+                    local reqCounts = {}
+                    for _, reqItem in ipairs(requiredItems) do
+                        reqCounts[reqItem] = (reqCounts[reqItem] or 0) + 1
+                    end
+
+                    -- Hitung inventory player
                     local invCounts = {}
                     for _, item in ipairs(inventoryData) do
                         invCounts[item] = (invCounts[item] or 0) + 1
                     end
-                    
+
+                    -- Cek apakah inventory cukup untuk semua kebutuhan
                     local hasEnough = true
-                    for _, reqItem in ipairs(requiredItems) do
-                        if (invCounts[reqItem] or 0) < 1 then
+                    for reqItem, needed in pairs(reqCounts) do
+                        if (invCounts[reqItem] or 0) < needed then
                             hasEnough = false
                             break
                         end
@@ -210,8 +212,13 @@ local function setupMixerFunctionality()
                         viewport.BackgroundTransparency = 1
                         viewport.Parent = currentResult
                         
-                        local foodItemsFolder = DropItemsFolder:FindFirstChild("FoodItems")
-                        
+                        local foodItemsFolder
+                        if isFoodMode then
+                            foodItemsFolder = DropItemsFolder:FindFirstChild("FoodItems")
+                        elseif isBoosterMode then
+                            foodItemsFolder = DropItemsFolder:FindFirstChild("BoosterItems")
+                        end
+
                         if foodItemsFolder then
                             local model = foodItemsFolder:FindFirstChild(outputMeshPart.Name)
                             
@@ -407,8 +414,17 @@ local function setupMixerFunctionality()
                 end
                 
                 -- Find matching recipe
-                local ListItemFoodCombineFolder = ListItemCombineFolder:WaitForChild("Food")  -- UBAH: Gunakan Food folder
-                for _, combineInfo in ipairs(ListItemFoodCombineFolder:GetChildren()) do  -- UBAH: Loop melalui Food children
+                local ListItemFoodCombineFolder
+                if isFoodMode then
+                    ListItemFoodCombineFolder = ListItemCombineFolder:WaitForChild("Food")
+                elseif isBoosterMode then
+                    ListItemFoodCombineFolder = ListItemCombineFolder:WaitForChild("Booster")
+                else
+                    warn("[MixerUI] No active mode for mixing!")
+                    return
+                end
+                
+                for _, combineInfo in ipairs(ListItemFoodCombineFolder:GetChildren()) do
                     local recipeName = combineInfo.Name
                     
                     local requiredItems = {}
@@ -419,32 +435,39 @@ local function setupMixerFunctionality()
                     end
                     
                     if #requiredItems == #materialsToMix then
+                        -- Hitung kebutuhan resep
+                        local reqCounts = {}
+                        for _, reqItem in ipairs(requiredItems) do
+                            reqCounts[reqItem] = (reqCounts[reqItem] or 0) + 1
+                        end
+                        
+                        -- Hitung material yang dipilih
+                        local matCounts = {}
+                        for _, mat in ipairs(materialsToMix) do
+                            matCounts[mat] = (matCounts[mat] or 0) + 1
+                        end
+                        
+                        -- Cek apakah material slot cocok dengan resep
                         local allMatch = true
-                        for _, required in ipairs(requiredItems) do
-                            local found = false
-                            for _, material in ipairs(materialsToMix) do
-                                if material == required then
-                                    found = true
-                                    break
-                                end
-                            end
-                            if not found then
+                        for reqItem, needed in pairs(reqCounts) do
+                            if (matCounts[reqItem] or 0) < needed then
                                 allMatch = false
                                 break
                             end
                         end
                         
                         if allMatch then
-                            -- TAMBAHAN: Check if player has enough items in inventory
+                            -- PERBAIKAN: Check inventory dengan jumlah yang benar
                             local invCounts = {}
                             for _, item in ipairs(inventoryData) do
                                 invCounts[item] = (invCounts[item] or 0) + 1
                             end
                             
                             local hasEnough = true
-                            for _, reqItem in ipairs(requiredItems) do
-                                if (invCounts[reqItem] or 0) < 1 then
+                            for reqItem, needed in pairs(reqCounts) do  -- <-- UBAH: Pakai reqCounts, bukan requiredItems
+                                if (invCounts[reqItem] or 0) < needed then  -- <-- UBAH: Bandingkan dengan jumlah yang dibutuhkan
                                     hasEnough = false
+                                    print("[MixerUI] Not enough", reqItem, "- have", (invCounts[reqItem] or 0), "need", needed)
                                     break
                                 end
                             end
@@ -571,7 +594,13 @@ local function setupMixerFunctionality()
             if outputFolder then
                 local outputMeshPart = outputFolder:GetChildren()[1]
                 if outputMeshPart then
-                    local foodItemsFolder = DropItemsFolder:FindFirstChild("FoodItems")
+                    local foodItemsFolder
+                    if isFoodMode then
+                        foodItemsFolder = DropItemsFolder:FindFirstChild("FoodItems")
+                    elseif isBoosterMode then
+                        foodItemsFolder = DropItemsFolder:FindFirstChild("BoosterItems")
+                    end
+
                     if foodItemsFolder then
                         local model = foodItemsFolder:FindFirstChild(outputMeshPart.Name)
                         if model then
